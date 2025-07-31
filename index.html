@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>لعبة حرب 3D بسيطة</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+    }
+    #game {
+      width: 100vw;
+      height: 100vh;
+      perspective: 1000px;
+      position: relative;
+      background: linear-gradient(#444, #222);
+    }
+    #player {
+      width: 40px;
+      height: 40px;
+      background: green;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotateX(20deg);
+      transform-style: preserve-3d;
+      border-radius: 10px;
+    }
+    .enemy {
+      width: 40px;
+      height: 40px;
+      background: red;
+      position: absolute;
+      border-radius: 10px;
+      transform: rotateY(15deg);
+    }
+    .enemy-hit-effect {
+      animation: enemyFlashRed 0.3s ease;
+    }
+    @keyframes enemyFlashRed {
+      0% { background: white; }
+      100% { background: red; }
+    }
+    .bullet {
+      width: 10px;
+      height: 10px;
+      background: yellow;
+      position: absolute;
+      border-radius: 50%;
+    }
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 18px;
+      z-index: 2;
+    }
+    #startScreen {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      z-index: 3;
+    }
+    #startScreen button {
+      font-size: 20px;
+      padding: 10px 20px;
+      margin-top: 20px;
+    }
+    #gameOverScreen {
+      display: none;
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      color: white;
+      font-size: 32px;
+      justify-content: center;
+      align-items: center;
+      z-index: 4;
+    }
+    #deathEffect {
+      position: absolute;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle, rgba(255,0,0,0.5) 0%, transparent 70%);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 5;
+      animation: none;
+    }
+    @keyframes flashRed {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <div id="score">النتيجة: 0</div>
+    <div id="player"></div>
+    <div id="startScreen">
+      <h1>🎮 لعبة حرب 3D</h1>
+      <button onclick="startGame()">ابدأ اللعبة</button>
+    </div>
+    <div id="gameOverScreen">💀 لقد خسرت! <br> <button onclick="location.reload()">إعادة اللعب</button></div>
+    <div id="deathEffect"></div>
+  </div>
+  <script>
+    const game = document.getElementById("game");
+    const player = document.getElementById("player");
+    const startScreen = document.getElementById("startScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const scoreDisplay = document.getElementById("score");
+    const deathEffect = document.getElementById("deathEffect");
+
+    let score = 0;
+    let bullets = [];
+    let enemies = [];
+    let keys = {};
+    let isGameOver = false;
+
+    document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+    game.addEventListener("click", shoot);
+
+    function startGame() {
+      startScreen.style.display = "none";
+      spawnEnemy();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function showDeathEffect() {
+      deathEffect.style.animation = "flashRed 0.5s ease";
+      deathEffect.style.opacity = "1";
+      setTimeout(() => {
+        deathEffect.style.opacity = "0";
+        deathEffect.style.animation = "none";
+      }, 500);
+    }
+
+    function endGame() {
+      isGameOver = true;
+      showDeathEffect();
+      setTimeout(() => {
+        gameOverScreen.style.display = "flex";
+      }, 500);
+    }
+
+    function movePlayer() {
+      const speed = 5;
+      if (keys['w'] || keys['arrowup']) player.style.top = (player.offsetTop - speed) + 'px';
+      if (keys['s'] || keys['arrowdown']) player.style.top = (player.offsetTop + speed) + 'px';
+      if (keys['a'] || keys['arrowleft']) player.style.left = (player.offsetLeft - speed) + 'px';
+      if (keys['d'] || keys['arrowright']) player.style.left = (player.offsetLeft + speed) + 'px';
+    }
+
+    function shoot(e) {
+      const bullet = document.createElement("div");
+      bullet.className = "bullet";
+      bullet.style.left = player.offsetLeft + 15 + 'px';
+      bullet.style.top = player.offsetTop + 15 + 'px';
+      const dx = (e.clientX - player.offsetLeft) / 40;
+      const dy = (e.clientY - player.offsetTop) / 40;
+      bullet.dataset.dx = dx;
+      bullet.dataset.dy = dy;
+      game.appendChild(bullet);
+      bullets.push(bullet);
+    }
+
+    function spawnEnemy() {
+      if (isGameOver) return;
+      const enemy = document.createElement("div");
+      enemy.className = "enemy";
+      enemy.style.left = Math.random() * (game.clientWidth - 40) + 'px';
+      enemy.style.top = '0px';
+      game.appendChild(enemy);
+      enemies.push(enemy);
+      setTimeout(spawnEnemy, 3000);
+    }
+
+    function moveBullets() {
+      bullets.forEach((b, i) => {
+        b.style.left = (b.offsetLeft + parseFloat(b.dataset.dx)) + 'px';
+        b.style.top = (b.offsetTop + parseFloat(b.dataset.dy)) + 'px';
+        if (b.offsetTop < 0 || b.offsetLeft < 0 || b.offsetTop > game.clientHeight || b.offsetLeft > game.clientWidth) {
+          b.remove();
+          bullets.splice(i, 1);
+        }
+      });
+    }
+
+    function moveEnemies() {
+      enemies.forEach(e => {
+        const dx = player.offsetLeft - e.offsetLeft;
+        const dy = player.offsetTop - e.offsetTop;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        e.style.left = e.offsetLeft + dx / dist * 1.5 + 'px';
+        e.style.top = e.offsetTop + dy / dist * 1.5 + 'px';
+
+        if (Math.abs(player.offsetLeft - e.offsetLeft) < 30 && Math.abs(player.offsetTop - e.offsetTop) < 30) {
+          endGame();
+        }
+      });
+    }
+
+    function checkCollisions() {
+      enemies.forEach((e, ei) => {
+        bullets.forEach((b, bi) => {
+          const ex = e.offsetLeft;
+          const ey = e.offsetTop;
+          const bx = b.offsetLeft;
+          const by = b.offsetTop;
+          if (Math.abs(ex - bx) < 20 && Math.abs(ey - by) < 20) {
+            e.classList.add("enemy-hit-effect");
+            setTimeout(() => e.classList.remove("enemy-hit-effect"), 300);
+            setTimeout(() => {
+              if (e.parentNode) e.remove();
+            }, 150);
+            b.remove();
+            enemies.splice(ei, 1);
+            bullets.splice(bi, 1);
+            score++;
+            scoreDisplay.textContent = "النتيجة: " + score;
+          }
+        });
+      });
+    }
+
+    function gameLoop() {
+      if (isGameOver) return;
+      movePlayer();
+      moveBullets();
+      moveEnemies();
+      checkCollisions();
+      requestAnimationFrame(gameLoop);
+    }
+  </script>
+</body>
+</html>
