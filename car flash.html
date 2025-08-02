@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>لعبة سيارة 3D</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #222;
+      font-family: sans-serif;
+    }
+    #game {
+      width: 100vw;
+      height: 100vh;
+      perspective: 1000px;
+      position: relative;
+      background: #111;
+    }
+    #road3d {
+      width: 300px;
+      height: 800px;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotateX(60deg);
+      transform-style: preserve-3d;
+      background: #333;
+      box-shadow: 0 0 40px #000 inset;
+      overflow: hidden;
+    }
+    .line {
+      position: absolute;
+      width: 10px;
+      height: 80px;
+      background: #fff;
+      left: 50%;
+      transform: translateX(-50%);
+      animation: moveLine 1.2s linear infinite;
+    }
+    @keyframes moveLine {
+      0% { top: -100px; }
+      100% { top: 800px; }
+    }
+    #car {
+      width: 60px;
+      height: 100px;
+      background: red;
+      position: absolute;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%) rotateX(25deg);
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(255,0,0,0.5);
+      z-index: 10;
+    }
+    .enemy {
+      width: 60px;
+      height: 100px;
+      background: blue;
+      position: absolute;
+      top: -120px;
+      border-radius: 10px;
+    }
+    .enemyBullet, .playerBullet {
+      width: 10px;
+      height: 20px;
+      background: yellow;
+      position: absolute;
+      z-index: 5;
+      border-radius: 4px;
+    }
+    .playerBullet {
+      background: lime;
+    }
+    #speedMeter, #score {
+      position: absolute;
+      top: 20px;
+      font-size: 20px;
+      color: white;
+      z-index: 100;
+    }
+    #speedMeter { left: 20px; }
+    #score { right: 20px; }
+    #startScreen, #gameOverScreen, #levelScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 32px;
+      z-index: 200;
+    }
+    #startBtn, #restartBtn, .levelBtn {
+      margin-top: 20px;
+      padding: 10px 30px;
+      font-size: 24px;
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .explosion {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      background: url('https://i.imgur.com/BrJ2Q7K.gif') center/cover no-repeat;
+      z-index: 999;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <div id="levelScreen">
+      <div>اختر مستوى الصعوبة</div>
+      <button class="levelBtn" onclick="startGameWithLevel(1)">سهل</button>
+      <button class="levelBtn" onclick="startGameWithLevel(2)">متوسط</button>
+      <button class="levelBtn" onclick="startGameWithLevel(3)">صعب</button>
+    </div>
+
+    <div id="startScreen" style="display: none;">
+      <div>🚗 لعبة سيارة 3D</div>
+      <button id="startBtn">ابدأ اللعبة</button>
+    </div>
+
+    <div id="gameOverScreen" style="display: none;">
+      <div>💥 انتهت اللعبة!</div>
+      <button id="restartBtn">العب مرة أخرى</button>
+    </div>
+
+    <div id="speedMeter">السرعة: 0</div>
+    <div id="score">النقاط: 0</div>
+
+    <div id="road3d">
+      <div class="line" style="animation-delay: 0s;"></div>
+      <div class="line" style="animation-delay: 0.4s;"></div>
+      <div class="line" style="animation-delay: 0.8s;"></div>
+      <div class="line" style="animation-delay: 1.2s;"></div>
+    </div>
+    <div id="car"></div>
+  </div>
+
+  <audio id="crashSound" src="https://cdn.pixabay.com/audio/2022/03/15/audio_b3bbcdad2d.mp3"></audio>
+  <audio id="bgMusic" src="https://cdn.pixabay.com/audio/2022/10/25/audio_5bb0a68f98.mp3" autoplay loop></audio>
+
+  <script>
+    const car = document.getElementById("car");
+    const game = document.getElementById("game");
+    const speedMeter = document.getElementById("speedMeter");
+    const scoreEl = document.getElementById("score");
+    const crashSound = document.getElementById("crashSound");
+    const bgMusic = document.getElementById("bgMusic");
+    const startScreen = document.getElementById("startScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const levelScreen = document.getElementById("levelScreen");
+    const startBtn = document.getElementById("startBtn");
+    const restartBtn = document.getElementById("restartBtn");
+
+    let carX = game.clientWidth / 2 - 30;
+    let keys = {};
+    let speed = 0;
+    let gameRunning = false;
+    let enemyInterval;
+    let enemySpeed = 4;
+    let spawnRate = 1500;
+    let score = 0;
+
+    document.addEventListener("keydown", e => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.code === "Space") shootPlayerBullet();
+    });
+    document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+    // 🧠 دعم اللمس على الهاتف
+    let touchStartX = 0;
+    game.addEventListener("touchstart", e => {
+      touchStartX = e.touches[0].clientX;
+    });
+    game.addEventListener("touchmove", e => {
+      const deltaX = e.touches[0].clientX - touchStartX;
+      touchStartX = e.touches[0].clientX;
+      carX += deltaX;
+    });
+    game.addEventListener("touchend", e => {
+      shootPlayerBullet();
+    });
+
+    function resetGame() {
+      const enemies = document.querySelectorAll(".enemy");
+      const bullets = document.querySelectorAll(".enemyBullet, .playerBullet");
+      const explosions = document.querySelectorAll(".explosion");
+      enemies.forEach(e => e.remove());
+      bullets.forEach(b => b.remove());
+      explosions.forEach(ex => ex.remove());
+      score = 0;
+      scoreEl.textContent = "النقاط: 0";
+    }
+
+    function shootPlayerBullet() {
+      const bullet = document.createElement("div");
+      bullet.classList.add("playerBullet");
+      bullet.style.left = car.offsetLeft + 25 + "px";
+      bullet.style.top = car.offsetTop - 10 + "px";
+      game.appendChild(bullet);
+
+      function moveBullet() {
+        if (!gameRunning) return;
+        const y = parseInt(bullet.style.top);
+        bullet.style.top = (y - 10) + "px";
+
+        const enemies = document.querySelectorAll(".enemy");
+        enemies.forEach(enemy => {
+          const enemyRect = enemy.getBoundingClientRect();
+          const bulletRect = bullet.getBoundingClientRect();
+          if (
+            bulletRect.left < enemyRect.right &&
+            bulletRect.right > enemyRect.left &&
+            bulletRect.top < enemyRect.bottom &&
+            bulletRect.bottom > enemyRect.top
+          ) {
+            showExplosion(enemy.offsetLeft, enemy.offsetTop);
+            enemy.remove();
+            bullet.remove();
+            score++;
+            scoreEl.textContent = "النقاط: " + score;
+          }
+        });
+
+        if (y > -20) requestAnimationFrame(moveBullet);
+        else bullet.remove();
+      }
+      moveBullet();
+    }
+
+    function spawnEnemy() {
+      if (!gameRunning) return;
+      const enemy = document.createElement("div");
+      enemy.classList.add("enemy");
+      enemy.style.left = (Math.random() * 240 + game.clientWidth / 2 - 150) + "px";
+      game.appendChild(enemy);
+
+      let enemyY = -120;
+      function moveEnemy() {
+        if (!gameRunning || !enemy.parentElement) return;
+        enemyY += enemySpeed;
+        enemy.style.top = enemyY + "px";
+
+        const carRect = car.getBoundingClientRect();
+        const enemyRect = enemy.getBoundingClientRect();
+
+        if (
+          carRect.left < enemyRect.right &&
+          carRect.right > enemyRect.left &&
+          carRect.top < enemyRect.bottom &&
+          carRect.bottom > enemyRect.top
+        ) {
+          crashSound.play();
+          showExplosion(car.offsetLeft, car.offsetTop);
+          endGame();
+          return;
+        }
+
+        if (enemyY < game.clientHeight) {
+          requestAnimationFrame(moveEnemy);
+        } else {
+          enemy.remove();
+        }
+      }
+      moveEnemy();
+
+      setTimeout(() => shootEnemyBullet(enemy), 500);
+    }
+
+    function shootEnemyBullet(enemy) {
+      if (!gameRunning) return;
+      const bullet = document.createElement("div");
+      bullet.classList.add("enemyBullet");
+      bullet.style.left = (enemy.offsetLeft + 25) + "px";
+      bullet.style.top = (enemy.offsetTop + 80) + "px";
+      game.appendChild(bullet);
+
+      function moveBullet() {
+        if (!gameRunning || !bullet.parentElement) return;
+        const y = parseInt(bullet.style.top);
+        bullet.style.top = (y + 8) + "px";
+
+        const carRect = car.getBoundingClientRect();
+        const bulletRect = bullet.getBoundingClientRect();
+        if (
+          carRect.left < bulletRect.right &&
+          carRect.right > bulletRect.left &&
+          carRect.top < bulletRect.bottom &&
+          carRect.bottom > bulletRect.top
+        ) {
+          crashSound.play();
+          showExplosion(car.offsetLeft, car.offsetTop);
+          endGame();
+          return;
+        }
+
+        if (y < game.clientHeight) {
+          requestAnimationFrame(moveBullet);
+        } else {
+          bullet.remove();
+        }
+      }
+      moveBullet();
+    }
+
+    function showExplosion(x, y) {
+      const explosion = document.createElement("div");
+      explosion.classList.add("explosion");
+      explosion.style.left = x + "px";
+      explosion.style.top = y + "px";
+      game.appendChild(explosion);
+      setTimeout(() => explosion.remove(), 1000);
+    }
+
+    function gameLoop() {
+      if (!gameRunning) return;
+      if (keys['arrowleft'] || keys['a']) carX -= 5;
+      if (keys['arrowright'] || keys['d']) carX += 5;
+
+      carX = Math.max(game.clientWidth / 2 - 150, Math.min(game.clientWidth / 2 + 150 - 60, carX));
+      car.style.left = carX + "px";
+
+      speed = keys['arrowup'] || keys['w'] ? 100 : 0;
+      speedMeter.textContent = "السرعة: " + speed;
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function startGameWithLevel(level) {
+      if (level === 1) { enemySpeed = 3; spawnRate = 1800; }
+      if (level === 2) { enemySpeed = 5; spawnRate = 1200; }
+      if (level === 3) { enemySpeed = 7; spawnRate = 800; }
+      levelScreen.style.display = "none";
+      startGame();
+    }
+
+    function startGame() {
+      resetGame();
+      gameRunning = true;
+      startScreen.style.display = "none";
+      gameOverScreen.style.display = "none";
+      carX = game.clientWidth / 2 - 30;
+      car.style.left = carX + "px";
+      keys = {};
+      gameLoop();
+      enemyInterval = setInterval(spawnEnemy, spawnRate);
+    }
+
+    function endGame() {
+      gameRunning = false;
+      clearInterval(enemyInterval);
+      gameOverScreen.style.display = "flex";
+    }
+
+    startBtn.onclick = startGame;
+    restartBtn.onclick = () => {
+      resetGame();
+      levelScreen.style.display = "flex";
+    };
+  </script>
+</body>
+</html>
